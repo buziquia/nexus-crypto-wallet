@@ -56,7 +56,9 @@ function App() {
       totalPages: 1,
     });
 
-  const [activeTab, setActiveTab] = useState<"ledger" | "transactions">("ledger");
+  const [activeTab, setActiveTab] = useState<"ledger" | "transactions">(
+    "ledger",
+  );
 
   const [amount, setAmount] = useState("");
   const [targetToken, setTargetToken] = useState("BTC");
@@ -90,22 +92,34 @@ function App() {
     setLoading(true);
 
     try {
+      const normalizedEmail = email.trim().toLowerCase();
+      const normalizedPass = pass.trim();
+
       const endpoint = isRegistering ? "/auth/register" : "/auth/login";
-      const res = await api.post(endpoint, { email, pass });
+      const res = await api.post(endpoint, {
+        email: normalizedEmail,
+        pass: normalizedPass,
+      });
 
       if (isRegistering) {
         alert("Conta criada com sucesso. Faça login para continuar.");
         setIsRegistering(false);
+        setEmail(normalizedEmail);
         setPass("");
       } else {
         localStorage.setItem("token", res.data.access_token);
+
         if (res.data.refresh_token) {
           localStorage.setItem("refresh_token", res.data.refresh_token);
         }
+
         setToken(res.data.access_token);
       }
     } catch (err: any) {
-      alert("Erro: " + (err.response?.data?.message || "Falha na autenticação"));
+      console.error("Erro no login/cadastro:", err.response?.data || err);
+      alert(
+        "Erro: " + (err.response?.data?.message || "Falha na autenticação"),
+      );
     } finally {
       setLoading(false);
     }
@@ -116,7 +130,10 @@ function App() {
     setProfile(res.data);
   };
 
-  const fetchHistory = async (page = historyPagination.page, limit = historyPagination.limit) => {
+  const fetchHistory = async (
+    page = historyPagination.page,
+    limit = historyPagination.limit,
+  ) => {
     const res = await api.get(`/auth/history?page=${page}&limit=${limit}`);
     setHistory(Array.isArray(res.data?.data) ? res.data.data : []);
     setHistoryPagination(
@@ -125,13 +142,13 @@ function App() {
         limit,
         total: 0,
         totalPages: 1,
-      }
+      },
     );
   };
 
   const fetchTransactions = async (
     page = transactionsPagination.page,
-    limit = transactionsPagination.limit
+    limit = transactionsPagination.limit,
   ) => {
     const res = await api.get(`/auth/transactions?page=${page}&limit=${limit}`);
     setTransactions(Array.isArray(res.data?.data) ? res.data.data : []);
@@ -141,7 +158,7 @@ function App() {
         limit,
         total: 0,
         totalPages: 1,
-      }
+      },
     );
   };
 
@@ -177,7 +194,7 @@ function App() {
 
       try {
         const res = await api.get(
-          `/auth/swap/quote?amount=${Number(amount)}&token=${targetToken}`
+          `/auth/swap/quote?amount=${Number(amount)}&token=${targetToken}`,
         );
         setQuote(res.data);
       } catch {
@@ -317,11 +334,12 @@ function App() {
                 Nexus Wallet
               </p>
               <h1 className="text-4xl font-black leading-tight">
-                Carteira cripto simplificada com foco em ledger e rastreabilidade.
+                Carteira cripto simplificada com foco em ledger e
+                rastreabilidade.
               </h1>
               <p className="mt-6 text-blue-100/90 leading-7">
-                Faça login para acompanhar seus saldos, executar swaps, consultar
-                movimentações e visualizar o histórico de transações.
+                Faça login para acompanhar seus saldos, executar swaps,
+                consultar movimentações e visualizar o histórico de transações.
               </p>
             </div>
 
@@ -343,7 +361,9 @@ function App() {
 
           <div className="p-8 md:p-10">
             <div className="md:hidden mb-8">
-              <h1 className="text-3xl font-black text-blue-950">NEXUS.WALLET</h1>
+              <h1 className="text-3xl font-black text-blue-950">
+                NEXUS.WALLET
+              </h1>
               <p className="text-sm text-slate-500 mt-2">
                 Carteira cripto simplificada
               </p>
@@ -362,6 +382,7 @@ function App() {
               <input
                 type="email"
                 placeholder="Seu email"
+                value={email}
                 className="w-full p-4 mb-4 border border-slate-200 rounded-2xl bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500"
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -370,6 +391,7 @@ function App() {
               <input
                 type="password"
                 placeholder="Sua senha"
+                value={pass}
                 className="w-full p-4 mb-6 border border-slate-200 rounded-2xl bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500"
                 onChange={(e) => setPass(e.target.value)}
                 required
@@ -383,8 +405,8 @@ function App() {
                 {loading
                   ? "Processando..."
                   : isRegistering
-                  ? "CRIAR CONTA"
-                  : "ENTRAR"}
+                    ? "CRIAR CONTA"
+                    : "ENTRAR"}
               </button>
 
               <button
@@ -427,7 +449,9 @@ function App() {
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-5 mb-8">
           <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200">
-            <p className="text-xs font-bold uppercase text-slate-400 mb-3">Reais</p>
+            <p className="text-xs font-bold uppercase text-slate-400 mb-3">
+              Reais
+            </p>
             <h2 className="text-3xl font-black text-slate-950">
               R${" "}
               {profile?.balances?.BRL?.toLocaleString("pt-BR", {
@@ -437,7 +461,9 @@ function App() {
           </div>
 
           <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200">
-            <p className="text-xs font-bold uppercase text-slate-400 mb-3">Bitcoin</p>
+            <p className="text-xs font-bold uppercase text-slate-400 mb-3">
+              Bitcoin
+            </p>
             <h2 className="text-3xl font-black text-orange-500">
               {profile?.balances?.BTC
                 ? Number(profile.balances.BTC).toFixed(8)
@@ -446,7 +472,9 @@ function App() {
           </div>
 
           <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200">
-            <p className="text-xs font-bold uppercase text-slate-400 mb-3">Ethereum</p>
+            <p className="text-xs font-bold uppercase text-slate-400 mb-3">
+              Ethereum
+            </p>
             <h2 className="text-3xl font-black text-blue-600">
               {profile?.balances?.ETH
                 ? Number(profile.balances.ETH).toFixed(8)
@@ -550,7 +578,9 @@ function App() {
                 disabled={loading}
                 className="bg-blue-600 hover:bg-blue-700 transition text-white p-4 rounded-2xl font-bold disabled:opacity-50"
               >
-                {loading ? "Processando..." : `EXECUTAR SWAP PARA ${targetToken}`}
+                {loading
+                  ? "Processando..."
+                  : `EXECUTAR SWAP PARA ${targetToken}`}
               </button>
 
               <button
@@ -621,11 +651,15 @@ function App() {
 
                       <p
                         className={`font-black text-right ${
-                          Number(t.amount) > 0 ? "text-green-600" : "text-red-500"
+                          Number(t.amount) > 0
+                            ? "text-green-600"
+                            : "text-red-500"
                         }`}
                       >
                         {Number(t.amount) > 0 ? "+" : ""}
-                        {Number(t.amount).toFixed(t.token === "BRL" ? 2 : 8)}{" "}
+                        {Number(t.amount).toFixed(
+                          t.token === "BRL" ? 2 : 8,
+                        )}{" "}
                         {t.token}
                       </p>
                     </div>
@@ -640,7 +674,9 @@ function App() {
 
                 <PaginationControls
                   pagination={historyPagination}
-                  onChangePage={(page) => fetchHistory(page, historyPagination.limit)}
+                  onChangePage={(page) =>
+                    fetchHistory(page, historyPagination.limit)
+                  }
                 />
               </>
             ) : (
@@ -664,11 +700,15 @@ function App() {
                         <div className="text-sm text-slate-700">
                           <p>
                             <span className="text-slate-500">Origem:</span>{" "}
-                            <span className="font-bold">{tx.tokenFrom || "-"}</span>
+                            <span className="font-bold">
+                              {tx.tokenFrom || "-"}
+                            </span>
                           </p>
                           <p>
                             <span className="text-slate-500">Destino:</span>{" "}
-                            <span className="font-bold">{tx.tokenTo || "-"}</span>
+                            <span className="font-bold">
+                              {tx.tokenTo || "-"}
+                            </span>
                           </p>
                         </div>
 

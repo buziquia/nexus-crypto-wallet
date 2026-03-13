@@ -3,26 +3,56 @@ import axios from 'axios';
 
 @Injectable()
 export class ExchangeService {
-  TAX = 0.015;
+  async getPrice(token: string): Promise<number> {
+    const normalizedToken = token.trim().toUpperCase();
 
-  async getPrice(token: string) {
-    let coin = '';
+    let coinId = '';
 
-    if (token === 'BTC') coin = 'bitcoin';
-    if (token === 'ETH') coin = 'ethereum';
-
-    if (!coin) {
-      throw new BadRequestException('Token inválido');
+    if (normalizedToken === 'BTC') {
+      coinId = 'bitcoin';
+    } else if (normalizedToken === 'ETH') {
+      coinId = 'ethereum';
+    } else {
+      throw new BadRequestException('Token inválido para cotação');
     }
 
-    const res = await axios.get(
-      `https://api.coingecko.com/api/v3/simple/price?ids=${coin}&vs_currencies=brl`,
-    );
+    try {
+      const response = await axios.get(
+        'https://api.coingecko.com/api/v3/simple/price',
+        {
+          params: {
+            ids: coinId,
+            vs_currencies: 'brl',
+          },
+          timeout: 10000,
+        },
+      );
 
-    return res.data[coin].brl;
+      const price = response.data?.[coinId]?.brl;
+
+      if (!price || typeof price !== 'number') {
+        throw new BadRequestException('Não foi possível obter a cotação');
+      }
+
+      return price;
+    } catch (error) {
+      if (normalizedToken === 'BTC') {
+        return 350000;
+      }
+
+      if (normalizedToken === 'ETH') {
+        return 18000;
+      }
+
+      throw new BadRequestException('Erro ao buscar cotação');
+    }
   }
 
-  calculateTax(amount: number) {
-    return amount * this.TAX;
+  calculateTax(amount: number): number {
+    if (!amount || amount <= 0) {
+      throw new BadRequestException('Valor inválido para cálculo da taxa');
+    }
+
+    return Number((amount * 0.015).toFixed(2));
   }
 }

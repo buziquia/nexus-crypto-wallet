@@ -12,34 +12,38 @@ export class AuthService {
     private prisma: PrismaService,
   ) {}
 
-  async register(email: string, pass: string) {
-    return this.usersService.create(email, pass);
-  }
+ async register(email: string, pass: string) {
+  const normalizedEmail = email.trim().toLowerCase();
+  return this.usersService.create(normalizedEmail, pass);
+}
 
   async login(email: string, pass: string) {
-    const user = await this.usersService.findByEmail(email);
+  const normalizedEmail = email.trim().toLowerCase();
+  const normalizedPass = pass.trim();
 
-    if (!user) {
-      throw new UnauthorizedException('E-mail ou senha inválidos');
-    }
+  const user = await this.usersService.findByEmail(normalizedEmail);
 
-    const isMatch = await bcrypt.compare(pass, user.password);
-
-    if (!isMatch) {
-      throw new UnauthorizedException('E-mail ou senha inválidos');
-    }
-
-    const tokens = await this.generateTokens(user.id, user.email);
-
-    const hashedRefreshToken = await bcrypt.hash(tokens.refresh_token, 10);
-
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: { hashedRefreshToken },
-    });
-
-    return tokens;
+  if (!user) {
+    throw new UnauthorizedException('E-mail ou senha inválidos');
   }
+
+  const isMatch = await bcrypt.compare(normalizedPass, user.password);
+
+  if (!isMatch) {
+    throw new UnauthorizedException('E-mail ou senha inválidos');
+  }
+
+  const tokens = await this.generateTokens(user.id, user.email);
+
+  const hashedRefreshToken = await bcrypt.hash(tokens.refresh_token, 10);
+
+  await this.prisma.user.update({
+    where: { id: user.id },
+    data: { hashedRefreshToken },
+  });
+
+  return tokens;
+}
 
   async refreshToken(userId: string, refreshToken: string) {
     const user = await this.prisma.user.findUnique({

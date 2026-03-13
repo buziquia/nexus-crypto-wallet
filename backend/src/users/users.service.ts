@@ -11,26 +11,29 @@ export class UsersService {
   ) {}
 
   async create(email: string, pass: string) {
-    const hashed = await bcrypt.hash(pass, 10);
+  const normalizedEmail = email.trim().toLowerCase();
+  const hashed = await bcrypt.hash(pass, 10);
 
-    return this.prisma.user.create({
-      data: {
-        email,
-        password: hashed,
-        wallet: {
-          create: {
-            balance: 0,
-            btcBalance: 0,
-            ethBalance: 0,
-          },
+  return this.prisma.user.create({
+    data: {
+      email: normalizedEmail,
+      password: hashed,
+      wallet: {
+        create: {
+          balance: 0,
+          btcBalance: 0,
+          ethBalance: 0,
         },
       },
-    });
-  }
+    },
+  });
+}
 
-  async findByEmail(email: string) {
-    return this.prisma.user.findUnique({ where: { email } });
-  }
+async findByEmail(email: string) {
+  return this.prisma.user.findUnique({
+    where: { email: email.trim().toLowerCase() },
+  });
+}
 
   async getWallet(userId: string) {
     return this.prisma.wallet.findUnique({ where: { userId } });
@@ -173,114 +176,124 @@ export class UsersService {
   }
 
   async quoteSwap(tokenOut: string, amount: number) {
-    const normalizedToken = tokenOut.toUpperCase();
+  const normalizedToken = tokenOut.trim().toUpperCase();
+  const normalizedAmount = Number(amount);
 
-    if (normalizedToken !== 'BTC' && normalizedToken !== 'ETH') {
-      throw new BadRequestException('Token inválido');
+  if (!normalizedAmount || normalizedAmount <= 0) {
+    throw new BadRequestException('Valor inválido');
+  }
+
+  if (normalizedToken !== 'BTC' && normalizedToken !== 'ETH') {
+    throw new BadRequestException('Token inválido');
+  }
+
+  const price = await this.exchange.getPrice(normalizedToken);
+  const tax = this.exchange.calculateTax(normalizedAmount);
+  const net = normalizedAmount - tax;
+  const amountOut = net / price;
+
+  return {
+    tokenOut: normalizedToken,
+    amountBRL: normalizedAmount,
+    tax,
+    conversionRate: price,
+    estimatedAmountOut: amountOut,
+  };
+}
+
+async executeSwap(userId: string, amountBRL: number, tokenOut: string) {
+  const normalizedToken = tokenOut.trim().toUpperCase();
+  const normalizedAmount = Number(amountBRL);
+
+  if (!normalizedAmount || normalizedAmount <= 0) {
+    throw new BadRequestException('Valor inválido');
+  }
+
+  if (normalizedToken !== 'BTC' && normalizedToken !== 'ETH') {
+    throw new BadRequestException('Token inválido');
+  }
+
+  const price = await this.exchange.getPrice(normalizedToken);
+  const tax = this.exchange.calculateTax(normalizedAmount);
+  const net = normalizedAmount - tax;
+  const amountOut = net / price;
+
+  return this.prisma.$transaction(async (tx: any) => {
+    const wallet = await tx.wallet.findUnique({
+      where: { userId },
+    });
+
+    if (!wallet || Number(wallet.balance) < normalizedAmount) {
+      throw new BadRequestException('Saldo insuficiente');
     }
 
-    const price = await this.exchange.getPrice(normalizedToken);
-    const tax = this.exchange.calculateTax(amount);
-    const net = amount - tax;
-    const amountOut = net / price;
+    const previousBrlBalance = Number(wallet.balance);
+    const newBrlBalance = previousBrlBalance - normalizedAmount;
+
+    const previousCryptoBalance =
+      normalizedToken === 'BTC'
+        ? Number(wallet.btcBalance)
+        : Number(wallet.ethBalance);
+
+    const newCryptoBalance = previousCryptoBalance + amountOut;
+
+    await tx.wallet.update({
+      where: { userId },
+      data: {
+        balance: newBrlBalance,
+        btcBalance: normalizedToken === 'BTC' ? newCryptoBalance : undefined,
+        ethBalance: normalizedToken === 'ETH' ? newCryptoBalance : undefined,
+      },
+    });
+
+    await tx.ledgerEntry.createMany({
+      data: [
+        {
+          walletId: wallet.id,
+          type: 'SWAP_OUT',
+          token: 'BRL',
+          amount: -normalizedAmount,
+          previousBalance: previousBrlBalance,
+          newBalance: newBrlBalance,
+        },
+        {
+          walletId: wallet.id,
+          type: 'SWAP_FEE',
+          token: 'BRL',
+          amount: -tax,
+          previousBalance: previousBrlBalance - tax,
+          newBalance: newBrlBalance,
+        },
+        {
+          walletId: wallet.id,
+          type: 'SWAP_IN',
+          token: normalizedToken,
+          amount: amountOut,
+          previousBalance: previousCryptoBalance,
+          newBalance: newCryptoBalance,
+        },
+      ],
+    });
+
+    await tx.transaction.create({
+      data: {
+        walletId: wallet.id,
+        type: 'SWAP',
+        tokenFrom: 'BRL',
+        tokenTo: normalizedToken,
+        amount: normalizedAmount,
+        fee: tax,
+      },
+    });
 
     return {
+      message: 'Swap realizado com sucesso',
+      received: amountOut,
       tokenOut: normalizedToken,
-      amountBRL: amount,
-      tax,
-      conversionRate: price,
-      estimatedAmountOut: amountOut,
+      taxPaid: tax,
     };
-  }
-
-  async executeSwap(userId: string, amountBRL: number, tokenOut: string) {
-    const normalizedToken = tokenOut.toUpperCase();
-
-    if (normalizedToken !== 'BTC' && normalizedToken !== 'ETH') {
-      throw new BadRequestException('Token inválido');
-    }
-
-    const price = await this.exchange.getPrice(normalizedToken);
-    const tax = this.exchange.calculateTax(amountBRL);
-    const net = amountBRL - tax;
-    const amountOut = net / price;
-
-    return this.prisma.$transaction(async (tx: any) => {
-      const wallet = await tx.wallet.findUnique({
-        where: { userId },
-      });
-
-      if (!wallet || Number(wallet.balance) < amountBRL) {
-        throw new BadRequestException('Saldo insuficiente');
-      }
-
-      const previousBrlBalance = Number(wallet.balance);
-      const newBrlBalance = previousBrlBalance - amountBRL;
-
-      const previousCryptoBalance =
-        normalizedToken === 'BTC'
-          ? Number(wallet.btcBalance)
-          : Number(wallet.ethBalance);
-
-      const newCryptoBalance = previousCryptoBalance + amountOut;
-
-      await tx.wallet.update({
-        where: { userId },
-        data: {
-          balance: newBrlBalance,
-          btcBalance: normalizedToken === 'BTC' ? newCryptoBalance : undefined,
-          ethBalance: normalizedToken === 'ETH' ? newCryptoBalance : undefined,
-        },
-      });
-
-      await tx.ledgerEntry.createMany({
-        data: [
-          {
-            walletId: wallet.id,
-            type: 'SWAP_OUT',
-            token: 'BRL',
-            amount: -amountBRL,
-            previousBalance: previousBrlBalance,
-            newBalance: newBrlBalance,
-          },
-          {
-            walletId: wallet.id,
-            type: 'SWAP_FEE',
-            token: 'BRL',
-            amount: -tax,
-            previousBalance: previousBrlBalance - tax,
-            newBalance: newBrlBalance,
-          },
-          {
-            walletId: wallet.id,
-            type: 'SWAP_IN',
-            token: normalizedToken,
-            amount: amountOut,
-            previousBalance: previousCryptoBalance,
-            newBalance: newCryptoBalance,
-          },
-        ],
-      });
-
-      await tx.transaction.create({
-        data: {
-          walletId: wallet.id,
-          type: 'SWAP',
-          tokenFrom: 'BRL',
-          tokenTo: normalizedToken,
-          amount: amountBRL,
-          fee: tax,
-        },
-      });
-
-      return {
-        message: 'Swap realizado com sucesso',
-        received: amountOut,
-        tokenOut: normalizedToken,
-        taxPaid: tax,
-      };
-    });
-  }
+  });
+}
 
   async withdraw(userId: string, amount: number, token: string = 'BRL') {
     const normalizedToken = token.toUpperCase();
